@@ -13,12 +13,11 @@ import base64
 import hashlib
 import os
 import re
-import stat
 import subprocess
 import sys
 
 try:
-    from typing import Optional, Tuple, List
+    from typing import List, Optional, Tuple
 except Exception:
     # Minimal fallback for very old envs
     Optional = None
@@ -155,8 +154,7 @@ def get_xattr(path, name):
 def safe_str(x):
     if isinstance(x, bytes):
         return(x.decode("utf-8", "backslashreplace"))
-    else:
-        return(str(x))
+    return(str(x))
 
 def main():
     ap = argparse.ArgumentParser(description="Scan filesystem for long xattrs and identify content (defensive).")
@@ -174,7 +172,7 @@ def main():
     try:
         top_stat = os.lstat(start)
     except OSError:
-        sys.stderr.write("ERROR: start path not found: {0}\n".format(start))
+        sys.stderr.write(f"ERROR: start path not found: {start}\n")
         sys.exit(1)
 
     if args.dump_dir:
@@ -186,7 +184,7 @@ def main():
     try:
         ns_re = re.compile(args.ns_regex.encode("utf-8"))
     except Exception as e:
-        sys.stderr.write("ERROR: invalid regex for --ns: {0}\n".format(e))
+        sys.stderr.write(f"ERROR: invalid regex for --ns: {e}\n")
         sys.exit(1)
 
     # Header
@@ -227,36 +225,28 @@ def main():
                 if mime == "text/plain" and mime2 != "-":
                     mime, magic = mime2, magic2
                 if note:
-                    note = note + ", " + "looks-like-base64→{0}".format(mime2)
+                    note = note + ", " + f"looks-like-base64→{mime2}"
                 else:
-                    note = "looks-like-base64→{0}".format(mime2)
+                    note = f"looks-like-base64→{mime2}"
 
             sha = hashlib.sha256(final_buf).hexdigest()
 
             dump_path = ""
             if args.dump_dir:
                 try:
-                    try:
-                        attr_str = name.decode("utf-8")
-                    except Exception:
-                        attr_str = name.decode("utf-8", "backslashreplace")
-                    safe_attr = attr_str.replace("/", "_").replace(":", "_").replace(" ", "_")
+                    attr_str = safe_str(name)
+                    safe_attr = attr_str.replace("/", "_").replace(":", "_").replace(" ", "_").replace("\\", "_")
                     base = os.path.basename(path) or "inode"
-                    dump_name = "{0}_{1}_{2}.bin".format(sha[:12], base, safe_attr)
+                    dump_name = f"{sha[:12]}_{base}_{safe_attr}.bin"
                     dump_path = os.path.join(args.dump_dir, dump_name)
                     with open(dump_path, "wb") as f:
                         f.write(final_buf)
-                except Exception:
+                except Exception as err:
+                    sys.stderr.write(f"[!] Dump failed for {path}:{name} → {err}\n")
                     dump_path = ""
 
-            try:
-                attr_print = safe_str(name)
-            except Exception:
-                attr_print = name.decode("utf-8", "backslashreplace")
-
-            sys.stdout.write("{bytes}\t{file}\t{attr}\t{mime}\t{magic}\t{sha}\t{note}\t{dump}\n".format(
-                bytes=nbytes, file=path, attr=attr_print, mime=mime, magic=magic, sha=sha, note=note, dump=dump_path
-            ))
+            attr_print = safe_str(name)
+            sys.stdout.write(f"{nbytes}\t{path}\t{attr_print}\t{mime}\t{magic}\t{sha}\t{note}\t{dump_path}\n")
 
 if __name__ == "__main__":
     main()
